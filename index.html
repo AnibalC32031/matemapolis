@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Matemápolis - Carrera Docente</title>
+  <link rel="stylesheet" href="style.css">
+  
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+  <!-- PANTALLA PRINCIPAL: LOBBY -->
+  <div id="lobby-screen" class="full-screen-layer">
+    <div class="lobby-card">
+      <header class="lobby-header">
+        <!-- Espacio para Imagen/Logo Institucional en el Lobby -->
+        <div class="lobby-logo-container">
+          <img class="app-logo" src="logo.png" alt="Logo IES" onerror="this.style.display='none'">
+        </div>
+        <span class="game-badge">IES Jujuy - Educación Secundaria</span>
+        <h1>🎲 MATEMÁPOLIS</h1>
+        <p class="lobby-desc">Profesorado de Educación Secundaria en Matemática</p>
+      </header>
+
+      <section class="player-setup-box">
+        <div class="field-block">
+          <label for="player-name">Tu Nombre de Estudiante:</label>
+          <input type="text" id="player-name" placeholder="Ej: Marcela" maxlength="15">
+        </div>
+
+        <div class="field-block">
+          <label>Ficha Académica:</label>
+          <div class="avatar-grid" id="avatar-picker">
+            <button type="button" class="avatar-btn active" data-icon="📐" data-label="Escuadra">
+              <span class="avatar-emoji">📐</span>
+              <span class="avatar-name">Escuadra</span>
+            </button>
+            <button type="button" class="avatar-btn" data-icon="🔢" data-label="Álgebra">
+              <span class="avatar-emoji">🔢</span>
+              <span class="avatar-name">Números</span>
+            </button>
+            <button type="button" class="avatar-btn" data-icon="📊" data-label="Estadística">
+              <span class="avatar-emoji">📊</span>
+              <span class="avatar-name">Gráficos</span>
+            </button>
+            <button type="button" class="avatar-btn" data-icon="🎓" data-label="Docente">
+              <span class="avatar-emoji">🎓</span>
+              <span class="avatar-name">Docente</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CONFIGURACIÓN DE PARTIDA -->
+        <div class="setup-match-config">
+          <div class="field-inline">
+            <label for="match-duration-select">⏱️ Tiempo de Juego:</label>
+            <select id="match-duration-select" class="form-select">
+              <option value="5">Partida Flash (5 min)</option>
+              <option value="10" selected>Rápida (10 min)</option>
+              <option value="15">Estándar (15 min)</option>
+              <option value="20">Completa (20 min)</option>
+              <option value="0">Ilimitada (Sin límite)</option>
+            </select>
+          </div>
+
+          <div class="field-inline">
+            <label for="match-max-players">👥 Cupo de Alumnos:</label>
+            <select id="match-max-players" class="form-select">
+              <option value="2">2 Estudiantes</option>
+              <option value="3">3 Estudiantes</option>
+              <option value="4" selected>4 Estudiantes (Completo)</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="rooms-section">
+        <div class="action-buttons-row">
+          <button id="btn-create-game" class="btn primary-btn large">➕ Crear Partida</button>
+          <button id="btn-open-rules" class="btn help-btn">📖 Reglas</button>
+        </div>
+
+        <div class="rooms-container">
+          <div class="rooms-header">
+            <h3>Salas en tu red:</h3>
+            <span id="scan-indicator" class="scan-tag">Buscando...</span>
+          </div>
+          <div id="rooms-list" class="rooms-list">
+            <p class="empty-rooms">Esperando anfitriones en la misma red wifi o canal...</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="waiting-room" class="waiting-box" style="display:none;">
+        <div class="waiting-header">
+          <h3>Sala de: <span id="host-room-title">...</span></h3>
+          <p id="waiting-room-sub">Comparte el enlace con tus compañeros para que se unan.</p>
+        </div>
+        <div class="players-joined-list" id="players-joined-list"></div>
+        <button id="btn-start-match" class="btn success-btn large full-width" style="display:none;">🚀 Iniciar Partida Ahora</button>
+      </section>
+    </div>
+  </div>
+
+  <!-- INTERFAZ DEL JUEGO EN CURSO -->
+  <div id="game-screen" style="display:none;">
+    
+    <!-- ENCABEZADO SUPERIOR PARA MÓVILES (Reloj + Turno) -->
+    <header class="mobile-top-bar">
+      <div class="mobile-turn-info">
+        <span id="m-turn-dot" class="status-dot"></span>
+        <span id="m-current-player">Cargando...</span>
+      </div>
+      <div class="mobile-clock">
+        ⏳ <span id="m-match-clock">10:00</span>
+      </div>
+      <div class="mobile-header-tools">
+        <button id="btn-toggle-drawer" class="btn mini-btn">📋 Menú</button>
+        <button id="btn-sound-toggle-top" class="btn mini-btn">🔊</button>
+      </div>
+    </header>
+
+    <!-- PANEL LATERAL / CAJÓN FLOTANTE EN MÓVILES -->
+    <aside id="game-sidebar" class="sidebar-drawer">
+      <div class="side-panel-header">
+        <h2>Matemápolis</h2>
+        <div class="side-panel-tools">
+          <button id="btn-close-drawer" class="btn mini-btn mobile-only-btn">✕ Cerrar</button>
+          <button id="btn-sound-toggle" class="btn mini-btn desktop-only-btn">🔊</button>
+          <button id="btn-help-floating" class="btn mini-btn">Reglas</button>
+        </div>
+      </div>
+
+      <!-- CRONÓMETRO GLOBAL -->
+      <div class="info-card match-clock-card" id="match-clock-card">
+        <div class="clock-header">
+          <span class="sub-label">Tiempo Restante:</span>
+          <span id="match-clock-display" class="match-clock-time">--:--</span>
+        </div>
+        <div class="match-clock-bar-bg">
+          <div id="match-clock-bar-fill" class="match-clock-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- PERFIL DEL JUGADOR ACTUAL -->
+      <div class="info-card my-identity-card">
+        <span class="sub-label">Estás jugando como:</span>
+        <div class="identity-profile">
+          <div id="my-avatar-badge" class="my-avatar-circle">📐</div>
+          <div>
+            <h3 id="my-name-display">Mi Nombre</h3>
+            <span id="my-academic-year" class="year-badge">1º Año</span>
+            <span id="my-role-display" class="role-subtitle">Ficha</span>
+          </div>
+        </div>
+        <button id="btn-emergency-grant" class="btn emergency-btn full-width" style="display:none;">
+          🚨 Pedir Beca de Emergencia (+200 CA)
+        </button>
+      </div>
+
+      <!-- TURNO Y CRONÓMETRO -->
+      <div class="info-card turn-card">
+        <div class="turn-header-row">
+          <span class="sub-label">Turno en curso:</span>
+          <span id="turn-timer-badge" class="timer-badge">20s</span>
+        </div>
+        <h3 id="current-player-display">Cargando...</h3>
+        <p id="current-turn-action">Esperando dado...</p>
+        <div class="timer-bar-bg">
+          <div id="turn-timer-progress" class="timer-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- >>>> INSERTAR AQUÍ: PANEL DE DADOS PARA COMPUTADORA <<<< -->
+      <div class="info-card desktop-dice-card">
+        <div class="desktop-dice-results">
+          <div class="dice-box-chip">Dado: <b id="desk-val-white-dice">-</b></div>
+          <div class="dice-box-chip golden" id="desk-golden-dice-pill" style="display:none;">Dorado: <b id="desk-val-golden-dice">-</b></div>
+        </div>
+        <div class="desktop-dice-btns">
+          <button id="desk-btn-roll" class="btn primary-btn full-width">🎲 Tirar Dado</button>
+          <div class="physical-quick-row">
+            <input type="number" id="desk-physical-dice-val" min="1" max="6" placeholder="Físico (1-6)">
+            <button id="desk-btn-apply-physical" class="btn small-btn">OK</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- JUGADORES Y CA -->
+      <div class="info-card players-card">
+        <h4>Panel de Aspirantes</h4>
+        <div id="players-table" class="players-table"></div>
+      </div>
+
+      <!-- HISTORIAL -->
+      <div class="info-card log-card">
+        <h4>Avisos Institucionales</h4>
+        <div id="game-log-box" class="game-log-box"></div>
+      </div>
+    </aside>
+
+    <!-- TABLERO RESPONSIVE -->
+    <main id="board-viewport">
+      <div id="monopoly-board" class="board-grid">
+        <div class="board-center-area">
+          <div class="center-title-box">
+            <!-- Imagen Central del Tablero -->
+            <div class="board-image-wrap">
+              <img id="board-logo" src="logo.png" alt="Logo Institucional" onerror="this.style.display='none'">
+            </div>
+            <h1>MATEMÁPOLIS</h1>
+            <p class="center-subtitle">Plan Oficial - Profesorado de Matemática</p>
+            <div class="reference-tags">
+              <span class="ref-tag blue">CFG</span>
+              <span class="ref-tag green">CFE</span>
+              <span class="ref-tag orange">CFPP</span>
+            </div>
+            <div class="win-conditions-hint">
+              <strong>Graduación:</strong> 5 cátedras + Residencia Final (39) + 2.200 CA.
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- BARRA FLOTANTE INFERIOR FIJA PARA CELULARES (LANZAR DADOS FÁCIL) -->
+    <nav class="mobile-action-bar">
+      <div class="mobile-dice-results">
+        <div class="dice-box-chip">🎲 <span id="m-val-white-dice">-</span></div>
+        <div class="dice-box-chip golden" id="m-golden-dice-pill" style="display:none;">⚡ <span id="m-val-golden-dice">-</span></div>
+      </div>
+
+      <div class="mobile-dice-btns">
+        <button id="m-btn-roll" class="btn primary-btn roll-giant-btn">🎲 Tirar Dado</button>
+        <div class="physical-quick-row">
+          <input type="number" id="physical-dice-val" min="1" max="6" placeholder="1-6">
+          <button id="btn-apply-physical-dice" class="btn small-btn">OK</button>
+        </div>
+      </div>
+    </nav>
+  </div>
+
+  <!-- MODAL: PREGUNTA PEDAGÓGICA -->
+  <div id="modal-question" class="modal-backdrop" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-badge-row">
+        <span id="question-subject-badge" class="subject-badge">Matemática</span>
+      </div>
+      <h3 id="question-subject-title">Título de la Materia</h3>
+      <p id="question-text" class="question-body">Texto del desafío pedagógico...</p>
+      
+      <div id="question-answers-list" class="answers-grid"></div>
+      <div id="question-feedback" class="feedback-area" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: COMPRAR MATERIA -->
+  <div id="modal-purchase" class="modal-backdrop" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-badge-row">
+        <span class="subject-badge green">Cátedra Disponible</span>
+      </div>
+      <h3 id="purchase-title">Nombre de la Materia</h3>
+      <p id="purchase-desc">¿Deseas titularizar esta cátedra?</p>
+      <div class="modal-actions-buttons">
+        <button id="btn-confirm-purchase" class="btn success-btn large">Titularizar</button>
+        <button id="btn-cancel-purchase" class="btn secondary-btn large">Dejar Libre</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EVENTO -->
+  <div id="modal-event-card" class="modal-backdrop" style="display:none;">
+    <div class="modal-box event-style">
+      <div class="event-icon-circle">📜</div>
+      <h3 id="event-title">Aviso Institucional</h3>
+      <p id="event-description">Detalles de la tarjeta...</p>
+      <button id="btn-accept-event" class="btn primary-btn full-width large">Continuar</button>
+    </div>
+  </div>
+
+  <!-- MODAL: REPORTE FINAL -->
+  <div id="modal-game-over" class="modal-backdrop" style="display:none;">
+    <div class="modal-box wide game-over-box">
+      <div class="modal-header-simple">
+        <h2>🎓 ACTA ACADÉMICA FINAL</h2>
+      </div>
+      <p id="game-over-reason" style="color:#94a3b8; margin-bottom: 15px;">Evaluación de graduación:</p>
+      <div id="final-scores-table" class="final-scores-table"></div>
+      <button onclick="location.reload()" class="btn primary-btn full-width large" style="margin-top:20px;">Volver al Menú</button>
+    </div>
+  </div>
+
+  <!-- MODAL: MANUAL -->
+  <div id="modal-rules-guide" class="modal-backdrop" style="display:none;">
+    <div class="modal-box wide">
+      <div class="modal-header-simple">
+        <h2>📖 Reglamento y Guía Docente</h2>
+        <button id="btn-close-rules" class="close-x">&times;</button>
+      </div>
+      <div class="manual-tabs">
+        <div class="manual-section">
+          <h4>1. Reloj de Partida y Turnos</h4>
+          <p>Dispones de <strong>20 segundos</strong> por turno. Si el tiempo expira, el sistema lanzará automáticamente.</p>
+        </div>
+        <div class="manual-section">
+          <h4>2. Acreditación de Cátedras</h4>
+          <p>Al caer en una materia libre responderás un desafío didáctico. Si aciertas, avanzas con el <em>Dado Dorado</em> y puedes titularizar. Si fallas, <strong>pierdes 25 CA y retrocedes 2 casillas</strong>.</p>
+        </div>
+        <div class="manual-section">
+          <h4>3. Ciclos Lectivos</h4>
+          <p>Cada vuelta completa al tablero representa el avance de año en la carrera (1º a 4º Año) otorgando la Beca (+200 CA).</p>
+        </div>
+      </div>
+      <button id="btn-close-rules-bottom" class="btn primary-btn full-width">Volver al Tablero</button>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
